@@ -38,15 +38,13 @@ lazy val zio = Seq(
 )
 
 lazy val logging = Seq(
-  "ch.qos.logback"             % "logback-classic"          % "1.4.5",
-  "ch.qos.logback"             % "logback-core"             % "1.4.5",
-  "net.logstash.logback"       % "logstash-logback-encoder" % "7.2",
-  "com.fasterxml.jackson.core" % "jackson-databind"         % "2.14.0"
+  "org.slf4j" % "slf4j-simple" % "2.0.5"
 )
 
 lazy val tests = Seq(
-  "dev.zio" %% "zio-test"     % versions.zio % "test,it",
-  "dev.zio" %% "zio-test-sbt" % versions.zio % "test,it"
+  "dev.zio" %% "zio-test"          % versions.zio % Test,
+  "dev.zio" %% "zio-test-sbt"      % versions.zio % Test,
+  "dev.zio" %% "zio-test-magnolia" % versions.zio % Test
 )
 
 lazy val `tapad-analytics` = project
