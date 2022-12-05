@@ -1,7 +1,10 @@
 package com.tapad.analytics
 
 import com.tapad.analytics.http.AppServer
+import com.tapad.analytics.ingest.services.IngestService
 import zio._
+import zio.http.ServerConfig
+import zio.http.ServerConfig.LeakDetectionLevel
 import zio.logging.{ LogFormat, consoleJson }
 
 object Startup extends ZIOAppDefault {
@@ -16,4 +19,14 @@ object Startup extends ZIOAppDefault {
       _ <- AppServer.start
     } yield ()
   }.exitCode
+    .provide(
+      AppServer.live,
+      ServerConfig.live(
+        ServerConfig.default
+          .port(8080)
+          .maxThreads(8)
+          .leakDetection(LeakDetectionLevel.PARANOID)
+      ),
+      IngestService.noOp
+    )
 }
