@@ -1,20 +1,18 @@
 package com.tapad.analytics.http
 
+import com.tapad.analytics.MetricsBroker
 import zio.{ Random, ZIO }
 import zio.http._
 import zio.http.model.{ Method, Status }
 
 import java.time.Instant
 import com.tapad.analytics.http.ops._
-import com.tapad.analytics.ingest.model.MetricEvent
-import com.tapad.analytics.ingest.services.IngestService
+import com.tapad.analytics.model.MetricEvent
 
-object Apps {
-
-  val analytics = queryEndpoint ++ ingestEndpoint
+object Endpoints {
 
   // GET /analytics?timestamp={millis_since_epoch}
-  lazy val queryEndpoint: UHttpApp = Http
+  lazy val query: UHttpApp = Http
     .collectZIO[Request] { case req @ Method.GET -> !! / "analytics" =>
       for {
         // we don't actually use the timestamp yet, but, for testing,
@@ -37,7 +35,7 @@ object Apps {
     .merge
 
   // POST /analytics?timestamp={millis_since_epoch}&user={username}&{click|impression}
-  lazy val ingestEndpoint: HttpApp[IngestService, Nothing] = Http
+  lazy val ingest: HttpApp[MetricsBroker, Nothing] = Http
     .collectZIO[Request] { case req @ Method.POST -> !! / "analytics" =>
       for {
         // we don't actually use the params yet, but, for testing,
@@ -62,7 +60,7 @@ object Apps {
           )
         (metricName, _) = metricParam
         metricEvent     = MetricEvent(ts, user, metricName)
-        _ <- IngestService.accept(metricEvent)
+        _ <- MetricsBroker.report(metricEvent)
       } yield Response.status(Status.NoContent)
     }
     .merge

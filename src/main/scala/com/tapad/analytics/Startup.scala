@@ -1,7 +1,6 @@
 package com.tapad.analytics
 
 import com.tapad.analytics.http.AppServer
-import com.tapad.analytics.ingest.services.IngestService
 import zio._
 import zio.http.ServerConfig
 import zio.http.ServerConfig.LeakDetectionLevel
@@ -27,6 +26,6 @@ object Startup extends ZIOAppDefault {
           .maxThreads(8)
           .leakDetection(LeakDetectionLevel.PARANOID)
       ),
-      IngestService.noOp
+      MetricsBroker.inMem
     )
 }

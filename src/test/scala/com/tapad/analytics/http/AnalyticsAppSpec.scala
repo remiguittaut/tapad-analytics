@@ -1,24 +1,23 @@
 package com.tapad.analytics.http
 
-import com.tapad.analytics.ingest.model.MetricEvent
-import com.tapad.analytics.ingest.services.IngestService
-import com.tapad.analytics.ingest.services.IngestService.TestIngestService
-import zio._
+import com.tapad.analytics.mocks.MetricsBrokerMock
+import com.tapad.analytics.mocks.MetricsBrokerMock.Report
+import com.tapad.analytics.model.MetricEvent
+import zio.Scope
 import zio.http._
 import zio.http.model._
 import zio.test._
 
-import java.time.temporal.ChronoUnit
-import java.time.{ Instant, OffsetDateTime, ZoneId }
+import java.time.Instant
 
 object AnalyticsAppSpec extends ZIOSpecDefault {
 
-  override def spec: Spec[TestEnvironment with Scope, Any] =
+  def spec: Spec[TestEnvironment with Scope, Any] =
     suite("The analytics App")(
-      (querySuite + ingestSuite).provide(IngestService.test)
+      querySuite + ingestSuite
     )
 
-  lazy val querySuite: Spec[TestIngestService, Throwable] = {
+  lazy val querySuite /*: Spec[Any, Throwable]*/ = {
     val timestamp = Instant.now.toEpochMilli
 
     val goodRequest =
@@ -40,13 +39,13 @@ object AnalyticsAppSpec extends ZIOSpecDefault {
       test(
         "should answer successfully on the GET /analytics?timestamp=??? uri, if a valid epoch timestamp is provided"
       ) {
-        Apps
-          .analytics(goodRequest)
+        Endpoints
+          .query(goodRequest)
           .mapBoth(_ => new Throwable, response => assertTrue(response.status.isSuccess))
       },
       test("should answer with text plain content") {
-        Apps
-          .analytics(goodRequest)
+        Endpoints
+          .query(goodRequest)
           .mapBoth(
             _ => new Throwable,
             response =>
@@ -67,8 +66,8 @@ object AnalyticsAppSpec extends ZIOSpecDefault {
             case _ => false
           }
 
-        Apps
-          .analytics(goodRequest)
+        Endpoints
+          .query(goodRequest)
           .orElseFail(new Throwable)
           .flatMap(_.body.asString)
           .map(body => assertTrue(contentIsCorrect(body)))
@@ -76,21 +75,21 @@ object AnalyticsAppSpec extends ZIOSpecDefault {
       test(
         "should fail with BadRequest if no epoch timestamp is provided as query param"
       ) {
-        Apps
-          .analytics(badRequestNoTs)
+        Endpoints
+          .query(badRequestNoTs)
           .mapBoth(_ => new Throwable, response => assertTrue(response.status == Status.BadRequest))
       },
       test(
         "should fail with BadRequest if a bad epoch timestamp is provided as query param"
       ) {
-        Apps
-          .analytics(badRequestBadTs)
+        Endpoints
+          .query(badRequestBadTs)
           .mapBoth(_ => new Throwable, response => assertTrue(response.status == Status.BadRequest))
       }
     )
   }
 
-  lazy val ingestSuite: Spec[TestIngestService, Throwable] = {
+  lazy val ingestSuite /*: Spec[MProxy, Throwable]*/ = {
     val timestamp = Instant.now.toEpochMilli
     val user      = "98237982374"
     val metric    = "click"
@@ -130,14 +129,6 @@ object AnalyticsAppSpec extends ZIOSpecDefault {
         goodRequestClick.url.copy(queryParams = (goodRequestClick.url.queryParams - metric).add("timestamp", "-10"))
       )
 
-    def genMetric(from: Instant, to: Instant): Gen[Any, MetricEvent] =
-      Gen
-        .instant(from, to)
-        .map(_.toEpochMilli)
-        .zip(Gen.stringN(12)(Gen.alphaChar))
-        .zip(Gen.elements("click", "impression"))
-        .map(MetricEvent.tupled)
-
     def requestForMetric(m: MetricEvent): Request =
       Request(
         Body.empty,
@@ -160,68 +151,81 @@ object AnalyticsAppSpec extends ZIOSpecDefault {
         "should answer successfully on the /analytics?timestamp={millis_since_epoch}&user={username}&{click|impression} uri, " +
           "if valid query params are provided"
       ) {
-        Apps
-          .analytics(goodRequestClick)
-          .mapBoth(_ => new Throwable, response => assertTrue(response.status.isSuccess))
+        Endpoints
+          .ingest(goodRequestClick)
+          .mapBoth(_ => new Throwable, response => assertTrue(response.status.isSuccess) && assertCompletes)
+          .provideLayer(MetricsBrokerMock.compose)
       },
       test("should answer with no content") {
-        Apps
-          .analytics(goodRequestImpression)
+        Endpoints
+          .ingest(goodRequestImpression)
           .mapBoth(
             _ => new Throwable,
             response => assertTrue(response.status == Status.NoContent)
           )
+          .provideLayer(MetricsBrokerMock.compose)
+      },
+      test(
+        "should report the event to the metrics broker"
+      ) {
+
+        (for {
+          _              <- Endpoints.ingest(goodRequestClick).orElseFail(new Throwable)
+          wasReported    <- MetricsBrokerMock.wasInvokedWith[Report, MetricEvent](MetricEvent(timestamp, user, metric))
+          wasInvokedOnce <- MetricsBrokerMock.wasInvokedOnce
+        } yield assertTrue(wasReported) && assertTrue(wasInvokedOnce))
+          .provideLayer(MetricsBrokerMock.compose)
       },
       test(
         "should fail with BadRequest if a query param is missing"
       ) {
-        Apps
-          .analytics(badRequestMissingParam)
-          .mapBoth(_ => new Throwable, response => assertTrue(response.status == Status.BadRequest))
+        (for {
+          response      <- Endpoints.ingest(badRequestMissingParam).orElseFail(new Throwable)
+          wasNotInvoked <- MetricsBrokerMock.wasNotInvoked
+        } yield assertTrue(response.status == Status.BadRequest) && assertTrue(wasNotInvoked))
+          .provideLayer(MetricsBrokerMock.compose)
       },
       test(
         "should fail with BadRequest if a bad epoch timestamp is provided as query param"
       ) {
-        Apps
-          .analytics(badRequestBadTs)
-          .mapBoth(_ => new Throwable, response => assertTrue(response.status == Status.BadRequest))
+        (for {
+          response      <- Endpoints.ingest(badRequestBadTs).orElseFail(new Throwable)
+          wasNotInvoked <- MetricsBrokerMock.wasNotInvoked
+        } yield assertTrue(response.status == Status.BadRequest) && assertTrue(wasNotInvoked))
+          .provideLayer(MetricsBrokerMock.compose)
       },
       test(
         "should fail with BadRequest if a bad metric type is provided as query param"
       ) {
-        Apps
-          .analytics(badRequestBadMetric)
-          .mapBoth(_ => new Throwable, response => assertTrue(response.status == Status.BadRequest))
-      },
+        (for {
+          response      <- Endpoints.ingest(badRequestBadMetric).orElseFail(new Throwable)
+          wasNotInvoked <- MetricsBrokerMock.wasNotInvoked
+        } yield assertTrue(response.status == Status.BadRequest) && assertTrue(wasNotInvoked))
+          .provideLayer(MetricsBrokerMock.compose)
+      } /*,
       test(
-        "should parse the metrics params and report the event to the ingestService"
+        "should parse the metrics params and report the event to the metricBroker"
       ) {
-        val utc = ZoneId.of("UTC")
 
         for {
-          now <- Clock.instant
-          lastHAgoTs = OffsetDateTime
-            .ofInstant(now, utc)
-            .truncatedTo(ChronoUnit.HOURS)
-            .toInstant
-          today = OffsetDateTime
-            .ofInstant(now, utc)
-            .truncatedTo(ChronoUnit.DAYS)
-            .toInstant
+          now <- Clock.ClockLive.instant.map(_.toEpochMilli)
+          lastHAgoTs = now - (now % 3_600_000)
+          today      = now - (now % (3_600_000 * 24))
           // Not exactly the definition of the exercise, supposed to be 95% matching the current ts,
           // but for testing, it's good enough to generate a distribution of 95% within the current hour
           // and 5% from today, before. ts are also not in order...
           outDatedMetrics <- genMetric(today, lastHAgoTs).runCollectN(50)
           metrics         <- genMetric(lastHAgoTs, now).runCollectN(950)
-          ingestService   <- ZIO.service[TestIngestService]
           all             <- Random.shuffle(outDatedMetrics ::: metrics)
+          broker          <- ZIO.service[MetricsBroker]
           _ <- ZIO
             .foreachParDiscard(all.map(requestForMetric)) { req =>
-              Apps.analytics(req).orElseFail(new Throwable)
+              Apps.ingestEndpoint(req).orElseFail(new Throwable)
             }
-          reported <- ingestService.reportedEvents.takeAll
-        } yield assertTrue(metrics.forall(reported.contains))
-      }
+          reported <- events.get
+        } yield assertTrue(all.forall(reported.contains)) && assertTrue(reported.size == 1000)
+        // TODO: Is order guaranteed? If so, find a better assert
+      }*/
     )
   }
 }

@@ -1,6 +1,6 @@
 package com.tapad.analytics.http
 
-import com.tapad.analytics.ingest.services.IngestService
+import com.tapad.analytics.MetricsBroker
 import zio.http.{ Server, ServerConfig }
 import zio.macros.accessible
 import zio.{ Task, URLayer, ZIO, ZLayer }
@@ -12,20 +12,20 @@ trait AppServer {
 
 object AppServer {
 
-  val live: URLayer[IngestService with ServerConfig, AppServer] =
+  val live: URLayer[MetricsBroker with ServerConfig, AppServer] =
     ZLayer.fromZIO {
       for {
-        config        <- ZIO.service[ServerConfig]
-        ingestService <- ZIO.service[IngestService]
+        config <- ZIO.service[ServerConfig]
+        broker <- ZIO.service[MetricsBroker]
       } yield new AppServer {
 
         val start: Task[Nothing] =
           Server
-            .serve(Apps.analytics)
+            .serve(Endpoints.query ++ Endpoints.ingest)
             .provide(
               Server.live,
               ServerConfig.live(config),
-              ZLayer.succeed(ingestService)
+              ZLayer.succeed(broker)
             )
       }
     }
