@@ -1,10 +1,12 @@
 package com.tapad.analytics
 
-import zio.{ Chunk, Ref, Tag, UIO, URIO, ZIO }
-
 import scala.reflect.ClassTag
 
+import zio.{ Chunk, Ref, Tag, UIO, URIO, ZIO }
+
 package object mocks {
+
+  // Super lightweight mocking framework
 
   trait Invocation[Action <: Invocation[Action, In], In] {
     val in: In
@@ -22,8 +24,11 @@ package object mocks {
     def actionWasNotInvoked[Action <: Invocation[_, _]](implicit ct: ClassTag[Action]): UIO[Boolean] =
       invocations
         .map(_.collect({
-          // sometimes, you gotta do what you gotta do. safe with the classTag though
+          // sometimes, you gotta do what you gotta do (type erasure). safe with the classTag though
+
+          // scalafix:off
           case invocation if ct.runtimeClass.isInstance(invocation) => invocation.asInstanceOf[Action]
+          // scalafix:on
         }).isEmpty)
 
     // implemented first with a partially applied to avoid having to specify both
@@ -34,8 +39,11 @@ package object mocks {
       invocations.map(all =>
         all
           .collect({
-            // sometimes, you gotta do what you gotta do. safe with the classTag though
+            // sometimes, you gotta do what you gotta do (type erasure). safe with the classTag though
+
+            // scalafix:off
             case invocation if ct.runtimeClass.isInstance(invocation) => invocation.asInstanceOf[Action]
+            // scalafix:on
           })
           .exists(_.in == in)
       )

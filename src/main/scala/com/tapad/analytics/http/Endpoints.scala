@@ -1,36 +1,36 @@
 package com.tapad.analytics.http
 
+import java.time.Instant
+
 import com.tapad.analytics.MetricsBroker
-import zio.{ Random, ZIO }
+import com.tapad.analytics.http.ops._
+import com.tapad.analytics.model.MetricEvent
+import com.tapad.analytics.query.QueryService
+
+import zio._
 import zio.http._
 import zio.http.model.{ Method, Status }
 
-import java.time.Instant
-import com.tapad.analytics.http.ops._
-import com.tapad.analytics.model.MetricEvent
-
 object Endpoints {
 
-  // GET /analytics?timestamp={millis_since_epoch}
-  lazy val query: UHttpApp = Http
+  lazy val query: HttpApp[QueryService, Nothing] = Http
     .collectZIO[Request] { case req @ Method.GET -> !! / "analytics" =>
       for {
-        // we don't actually use the timestamp yet, but, for testing,
-        //  we want to validate the bad request answer, so we parse it.
-        _ <- ZIO
+        time <- ZIO
           .from(req.getParam[Instant]("timestamp"))
           .orElseFail(
             Response
               .badRequest(s"missing valid 'timestamp' query parameter format (should be epoch milli)")
           )
-        users       <- Random.nextIntBounded(100_000)
-        clicks      <- Random.nextIntBetween(100_000, 1_000_000)
-        impressions <- Random.nextIntBetween(100_000, 1_000_000)
-      } yield Response.text(
-        s"""unique_users,$users
-           |clicks,$clicks
-           |impressions,$impressions""".stripMargin
-      )
+        result <- QueryService
+          .queryForTimestamp(time)
+          .tapErrorCause(ZIO.logErrorCause(_))
+          .mapError(err =>
+            Response
+              .status(Status.InternalServerError)
+              .copy(body = Body.fromString(err.getMessage))
+          )
+      } yield Response.text(result.asText)
     }
     .merge
 

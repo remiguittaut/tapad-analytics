@@ -1,6 +1,7 @@
 package com.tapad.analytics.specs.utils
 
 import com.tapad.analytics.model.MetricEvent
+
 import zio.test.Gen
 
 object TestData {

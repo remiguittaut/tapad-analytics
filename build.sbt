@@ -30,11 +30,19 @@ val scalacCustomOptions = Seq(
 )
 
 lazy val zio = Seq(
-  "dev.zio" %% "zio"               % versions.zio,
-  "dev.zio" %% "zio-macros"        % versions.zio,
-  "dev.zio" %% "zio-logging"       % versions.`zio-logging`,
-  "dev.zio" %% "zio-logging-slf4j" % versions.`zio-logging`,
-  "dev.zio" %% "zio-http"          % versions.`zio-http`
+  "dev.zio" %% "zio"                 % versions.zio,
+  "dev.zio" %% "zio-macros"          % versions.zio,
+  "dev.zio" %% "zio-logging"         % versions.`zio-logging`,
+  "dev.zio" %% "zio-logging-slf4j"   % versions.`zio-logging`,
+  "dev.zio" %% "zio-http"            % versions.`zio-http`,
+  "dev.zio" %% "zio-config"          % versions.`zio-config`,
+  "dev.zio" %% "zio-config-magnolia" % versions.`zio-config`,
+  "dev.zio" %% "zio-config-typesafe" % versions.`zio-config`
+)
+
+lazy val sttp = Seq(
+  "com.softwaremill.sttp.client3" %% "core" % versions.sttp,
+  "com.softwaremill.sttp.client3" %% "zio"  % versions.sttp
 )
 
 lazy val logging = Seq(
@@ -53,7 +61,7 @@ lazy val `tapad-analytics` = project
     version := versions.app,
     scalaVersion := versions.scala,
     scalacOptions ++= scalacCustomOptions,
-    libraryDependencies ++= zio ++ logging ++ tests,
+    libraryDependencies ++= zio ++ logging ++ tests ++ sttp,
     testFrameworks := Seq(new TestFramework("zio.test.sbt.ZTestFramework"))
   )
 
